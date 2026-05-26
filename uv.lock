@@ -2119,8 +2119,8 @@ wheels = [
 ]
 
 [[package]]
-name = "stable-audio-tools-dev"
-version = "0.0.10"
+name = "stable-audio-tools"
+version = "0.0.20"
 source = { editable = "." }
 dependencies = [
     { name = "alias-free-torch" },
@@ -2203,7 +2203,7 @@ requires-dist = [
     { name = "sentencepiece", specifier = "==0.1.99" },
     { name = "setuptools", specifier = "<81" },
     { name = "soxr" },
-    { name = "stable-audio-tools-dev", extras = ["train", "ui"], marker = "extra == 'all'" },
+    { name = "stable-audio-tools", extras = ["train", "ui"], marker = "extra == 'all'" },
     { name = "torch", marker = "platform_machine != 'x86_64' or sys_platform != 'linux'", specifier = "==2.7.1" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "==2.7.1", index = "https://download.pytorch.org/whl/cu126" },
     { name = "torchaudio", marker = "platform_machine != 'x86_64' or sys_platform != 'linux'", specifier = "==2.7.1" },
