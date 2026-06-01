@@ -1,10 +1,12 @@
-from pytorch_lightning.loggers import WandbLogger, CometLogger
+from pytorch_lightning.loggers import WandbLogger, CometLogger, TensorBoardLogger
 from ..interface.aeiou import pca_point_cloud
 
 import math
 import wandb
 import torch
+import torchaudio
 import torch.nn.functional as F
+import numpy as np
 import os
 import typing as tp
 
@@ -113,25 +115,53 @@ def logger_project_name(logger) -> str:
         return logger.experiment.project
     elif isinstance(logger, CometLogger):
         return logger.name
+    elif isinstance(logger, TensorBoardLogger):
+        return logger.name
 
 def log_metric(logger, key, value, step=None):
-    from pytorch_lightning.loggers import WandbLogger, CometLogger
     if isinstance(logger, WandbLogger):
         logger.experiment.log({key: value})
     elif isinstance(logger, CometLogger):
         logger.experiment.log_metrics({key: value}, step=step)
+    elif isinstance(logger, TensorBoardLogger):
+        logger.experiment.add_scalar(key, value, global_step=step)
 
 def log_audio(logger, key, audio_path, sample_rate, caption=None, step=None):
     if isinstance(logger, WandbLogger):
         logger.experiment.log({key: wandb.Audio(audio_path, sample_rate=sample_rate, caption=caption)})
     elif isinstance(logger, CometLogger):
         logger.experiment.log_audio(audio_path, file_name=key, sample_rate=sample_rate, step=step)
+    elif isinstance(logger, TensorBoardLogger):
+        audio_data, sr = torchaudio.load(audio_path)
+        # TensorBoard add_audio expects mono audio: (1, L) or (L,).
+        if audio_data.ndim == 2 and audio_data.shape[0] > 1:
+            audio_data = audio_data.mean(dim=0, keepdim=True)
+        logger.experiment.add_audio(key, audio_data, sample_rate=sr, global_step=step)
+
+def make_audio_log_path(logger, filename):
+    base_dir = getattr(logger, "log_dir", None) or getattr(logger, "save_dir", None) or os.getcwd()
+    audio_dir = os.path.join(base_dir, "audio_tmp")
+    os.makedirs(audio_dir, exist_ok=True)
+    return os.path.join(audio_dir, filename)
 
 def log_image(logger, key, img_data, step=None):
     if isinstance(logger, WandbLogger):
         logger.experiment.log({key: wandb.Image(img_data)})
     elif isinstance(logger, CometLogger):
         logger.experiment.log_image(img_data, name=key, step=step)
+    elif isinstance(logger, TensorBoardLogger):
+        # img_data can be a PIL Image, numpy array, or torch Tensor
+        if hasattr(img_data, 'convert'):  # PIL Image
+            img_array = np.array(img_data.convert('RGB'))
+            # TensorBoard expects (H, W, C) for add_image with dataformats='HWC'
+            logger.experiment.add_image(key, img_array, global_step=step, dataformats='HWC')
+        elif isinstance(img_data, torch.Tensor):
+            logger.experiment.add_image(key, img_data, global_step=step)
+        elif isinstance(img_data, np.ndarray):
+            if img_data.ndim == 3 and img_data.shape[2] in (3, 4):
+                logger.experiment.add_image(key, img_data, global_step=step, dataformats='HWC')
+            else:
+                logger.experiment.add_image(key, img_data, global_step=step)
 
 def log_point_cloud(logger, key, tokens, caption=None):
     if isinstance(logger, WandbLogger):
@@ -140,6 +170,10 @@ def log_point_cloud(logger, key, tokens, caption=None):
     elif isinstance(logger, CometLogger):
         point_cloud = pca_point_cloud(tokens, rgb_float=True, output_type="points")
         #logger.experiment.log_points_3d(scene_name=key, points=point_cloud)
+    elif isinstance(logger, TensorBoardLogger):
+        # TensorBoard doesn't natively support 3D point clouds,
+        # so we skip this for now (no equivalent API)
+        pass
 
 
 def compute_per_elem_trim(conditioning, sample_rate, margin_seconds=5.0):

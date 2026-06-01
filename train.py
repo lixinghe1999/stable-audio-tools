@@ -124,11 +124,24 @@ def main():
         else:
             print(f"No save_dir specified, using {args.save_dir if args.save_dir else None}.")
             checkpoint_dir = args.save_dir if args.save_dir else None
+    elif args.logger == 'tensorboard':
+        from datetime import datetime
+        version = datetime.now().strftime("%Y%m%d-%H%M%S")
+        logger = pl.loggers.TensorBoardLogger(save_dir=args.save_dir or "lightning_logs", name=args.name, version=version)
+        if args.save_dir and isinstance(logger.version, str):
+            checkpoint_dir = os.path.join(args.save_dir, logger.name, logger.version, "checkpoints")
+        else:
+            checkpoint_dir = args.save_dir if args.save_dir else None
     else:
         logger = None
         checkpoint_dir = args.save_dir if args.save_dir else None
         
-    ckpt_callback = pl.callbacks.ModelCheckpoint(every_n_train_steps=args.checkpoint_every, dirpath=checkpoint_dir, save_top_k=-1)
+    ckpt_callback = pl.callbacks.ModelCheckpoint(
+        every_n_train_steps=args.checkpoint_every,
+        dirpath=checkpoint_dir,
+        save_top_k=-1,
+        save_last=True,
+    )
     save_model_config_callback = ModelConfigEmbedderCallback(model_config)
 
     if args.val_dataset_config:
@@ -148,6 +161,12 @@ def main():
         push_wandb_config(logger, args_dict)
     elif args.logger == 'comet':
         logger.log_hyperparams(args_dict)
+    elif args.logger == 'tensorboard':
+        logger.log_hyperparams(args_dict)
+
+    local_world_size = os.environ.get("LOCAL_WORLD_SIZE")
+    trainer_devices = int(local_world_size) if local_world_size else "auto"
+    strategy_gpu_count = int(local_world_size) if local_world_size else getattr(args, "num_gpus", 1)
 
     #Set multi-GPU strategy if specified
     if args.strategy:
@@ -172,7 +191,7 @@ def main():
         else:
             strategy = args.strategy
     else:
-        strategy = 'ddp_find_unused_parameters_true' if args.num_gpus > 1 else "auto"
+        strategy = 'ddp_find_unused_parameters_true' if strategy_gpu_count > 1 else "auto"
 
     if strategy == 'ddp_find_unused_parameters_true' or (strategy == 'ddp' and args.num_nodes > 1):
         strategy = DDPStrategy(
@@ -202,7 +221,7 @@ def main():
         callbacks.append(metrics_callback)
 
     trainer = pl.Trainer(
-        devices="auto",
+        devices=trainer_devices,
         accelerator="gpu",
         num_nodes = args.num_nodes,
         strategy=strategy,
@@ -211,7 +230,7 @@ def main():
         callbacks=callbacks,
         logger=logger,
         log_every_n_steps=1,
-        max_epochs=10000000,
+        max_epochs=10,
         default_root_dir=args.save_dir,
         gradient_clip_val=args.gradient_clip_val,
         reload_dataloaders_every_n_epochs = 0,

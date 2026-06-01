@@ -1108,6 +1108,19 @@ class MultiConditioner(nn.Module):
             else:
                 output[key] = conditioner(conditioner_inputs, device)
 
+        # Handle pre_encoded_keys that don't have a corresponding conditioner module
+        for key in self.pre_encoded_keys:
+            if key not in output:
+                conditioner_inputs = []
+                for x in batch_metadata:
+                    if key not in x:
+                        raise ValueError(f"Pre-encoded key '{key}' not found in batch metadata")
+                    conditioner_input = x[key]
+                    if isinstance(conditioner_input, list) or isinstance(conditioner_input, tuple) and len(conditioner_input) == 1:
+                        conditioner_input = conditioner_input[0]
+                    conditioner_inputs.append(conditioner_input)
+                output[key] = [torch.stack(conditioner_inputs, dim=0).to(device), None]
+
         return output
 
 def create_multi_conditioner_from_conditioning_config(config: tp.Dict[str, tp.Any], pretransform=None) -> MultiConditioner:

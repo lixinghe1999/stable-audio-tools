@@ -16,7 +16,7 @@ import webdataset as wds
 from os import path
 from torch import nn
 from torchaudio import transforms as T
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Union
 
 from .utils import Stereo, Mono, PhaseFlipper, PadCrop_Normalized_T, VolumeNorm, strip_trailing_silence
 
@@ -480,6 +480,137 @@ class PreEncodedDataset(torch.utils.data.Dataset):
         except Exception as e:
             print(f'Couldn\'t load file {latent_filename}: {e}')
             return self[random.randrange(len(self))]
+
+class PairedLatentJsonlDataset(torch.utils.data.Dataset):
+    """
+    Dataset for paired pre-encoded latent files specified via one or more JSONL files.
+    
+    Each line in the JSONL file should be a JSON object with at least:
+      - input_key: path to the input (degraded) latent .pt file
+      - target_key: path to the target (clean) latent .pt file
+      - duration_key: duration in seconds
+    
+    The input latent is provided as 'input_audio' in metadata for conditioning,
+    and the target latent is used as the training target (reals).
+    
+    jsonl_path can be a single path (str) or a list of paths (list[str]).
+    When multiple paths are provided, entries from all JSONL files are concatenated.
+    """
+    def __init__(
+        self,
+        jsonl_path: Union[str, list],
+        input_key: str = "location",
+        target_key: str = "original_location",
+        duration_key: str = "duration",
+        latent_crop_length: int = None,
+        random_crop: bool = False,
+        sample_rate: int = 44100,
+        latent_downsampling_ratio: int = 4096,
+    ):
+        super().__init__()
+        self.input_key = input_key
+        self.target_key = target_key
+        self.duration_key = duration_key
+        self.latent_crop_length = latent_crop_length
+        self.random_crop = random_crop
+        self.sample_rate = sample_rate
+        self.latent_downsampling_ratio = latent_downsampling_ratio
+
+        # Load all entries from the JSONL file(s)
+        # jsonl_path can be a single path or a list of paths
+        if isinstance(jsonl_path, str):
+            jsonl_paths = [jsonl_path]
+        else:
+            jsonl_paths = jsonl_path
+
+        self.entries = []
+        for path in jsonl_paths:
+            with open(path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        self.entries.append(json.loads(line))
+
+        print(f'[PairedLatentJsonlDataset] Loaded {len(self.entries)} entries from {len(jsonl_paths)} JSONL file(s): {jsonl_paths}')
+
+    def __len__(self):
+        return len(self.entries)
+
+    def _normalize_latent_shape(self, latent: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize latent tensor to (C, T) format.
+        
+        Handles:
+          - (C, T): already correct, return as-is
+          - (1, T, C): squeeze batch dim and transpose -> (C, T)
+          - (T, C): transpose -> (C, T)
+          - (1, C, T): squeeze batch dim -> (C, T)
+        
+        Heuristic: if last dim > first non-batch dim, assume (T, C) or (1, T, C) format
+        since C (channels) is typically larger than T (time steps) for short segments,
+        but for audio latents C=256 is the channel dim from the VAE.
+        
+        We use io_channels from model config (typically 256) as reference:
+        if shape[-1] == 256 and shape[-2] != 256, it's likely (T, C) format.
+        """
+        if latent.ndim == 3 and latent.shape[0] == 1:
+            latent = latent.squeeze(0)  # (1, ?, ?) -> (?, ?)
+        
+        if latent.ndim == 2:
+            # (A, B) format - need to determine if it's (C, T) or (T, C)
+            # Convention: the larger dimension is likely C (channels=256 for stable audio VAE)
+            # If dim0 < dim1, assume (T, C) and transpose to (C, T)
+            if latent.shape[0] < latent.shape[1]:
+                latent = latent.T  # (T, C) -> (C, T)
+        
+        return latent
+
+    def __getitem__(self, idx):
+        entry = self.entries[idx]
+        try:
+            input_path = entry[self.input_key]
+            target_path = entry[self.target_key]
+            duration = entry.get(self.duration_key, 0.0)
+
+            # Load latent tensors (.pt files)
+            # Files may be stored as (1, T, C) or (T, C) from VAE encoder output, need to convert to [C, T]
+            target_latent = torch.load(target_path, map_location="cpu", weights_only=True)
+            input_latent = torch.load(input_path, map_location="cpu", weights_only=True)
+
+            # Normalize to (C, T) format
+            target_latent = self._normalize_latent_shape(target_latent)
+            input_latent = self._normalize_latent_shape(input_latent)
+
+            # Ensure both have the same length (truncate to the shorter one)
+            min_len = min(target_latent.shape[-1], input_latent.shape[-1])
+            target_latent = target_latent[..., :min_len]
+            input_latent = input_latent[..., :min_len]
+
+            # Optional cropping
+            if self.latent_crop_length is not None and min_len > self.latent_crop_length:
+                if self.random_crop:
+                    start = random.randint(0, min_len - self.latent_crop_length)
+                else:
+                    start = 0
+                target_latent = target_latent[..., start:start + self.latent_crop_length]
+                input_latent = input_latent[..., start:start + self.latent_crop_length]
+
+            # Build padding mask (all valid for pre-encoded paired data)
+            seq_len = target_latent.shape[-1]
+            padding_mask = torch.ones(seq_len, dtype=torch.bool)
+
+            # Build metadata dict
+            info = {}
+            info["input_audio"] = input_latent  # Will be used as local_add_cond via pre_encoded_keys
+            info["seconds_total"] = seq_len * self.latent_downsampling_ratio / self.sample_rate
+            info["source_seconds_total"] = duration
+            info["padding_mask"] = [padding_mask]
+
+            return (target_latent, info)
+        except Exception as e:
+            print(f'[PairedLatentJsonlDataset] Error loading entry {idx} ({entry.get("id", "unknown")}): {e}')
+            return self[random.randrange(len(self))]
+
 
 # S3 code and WDS preprocessing code based on implementation by Scott Hawley originally in https://github.com/zqevans/audio-diffusion/blob/main/dataset/dataset.py
 
@@ -1070,6 +1201,27 @@ def create_dataloader_from_config(dataset_config, batch_size, sample_size, sampl
         return torch.utils.data.DataLoader(train_set, batch_size, shuffle=shuffle if sampler is None else False,
                                 sampler=sampler,
                                 num_workers=num_workers, persistent_workers=True, pin_memory=True, drop_last=dataset_config.get("drop_last", True), collate_fn=collation_fn,
+                                prefetch_factor=2 if num_workers > 0 else None)
+
+    elif dataset_type == "paired_latent_jsonl":
+
+        jsonl_path = dataset_config.get("training_jsonl", None)
+        assert jsonl_path is not None, "training_jsonl must be specified for paired_latent_jsonl dataset type"
+
+        train_set = PairedLatentJsonlDataset(
+            jsonl_path=jsonl_path,
+            input_key=dataset_config.get("input_key", "location"),
+            target_key=dataset_config.get("target_key", "original_location"),
+            duration_key=dataset_config.get("duration_key", "duration"),
+            latent_crop_length=dataset_config.get("latent_crop_length", None),
+            random_crop=dataset_config.get("random_crop", True),
+            sample_rate=sample_rate,
+            latent_downsampling_ratio=dataset_config.get("latent_downsampling_ratio", 4096),
+        )
+
+        return torch.utils.data.DataLoader(train_set, batch_size, shuffle=shuffle,
+                                num_workers=num_workers, persistent_workers=True, pin_memory=True,
+                                drop_last=dataset_config.get("drop_last", True), collate_fn=collation_fn,
                                 prefetch_factor=2 if num_workers > 0 else None)
 
     elif dataset_type in ["s3", "wds"]: # Support "s3" type for backwards compatibility

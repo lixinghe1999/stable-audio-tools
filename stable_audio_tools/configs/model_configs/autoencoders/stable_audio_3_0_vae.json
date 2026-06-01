@@ -1,0 +1,152 @@
+{
+    "model_type": "autoencoder",
+    "sample_size": 196608,
+    "sample_rate": 44100,
+    "audio_channels": 2,
+    "model": {
+        "pretransform": {
+            "type": "patched",
+            "config": {
+                "patch_size": 256,
+                "channels": 2
+            }
+        },
+        "encoder": {
+            "type": "same",
+            "requires_grad": true,
+            "config": {
+                "in_channels": 512,
+                "channels": 256,
+                "c_mults": [6],
+                "strides": [16],
+                "latent_dim": 256,
+                "transformer_depths": [12],
+                "checkpointing": true,
+                "differential": true,
+                "dyt": true,
+                "dim_heads": 64,
+                "sliding_window": [1,1],
+                "variable_stride": true,
+                "mask_noise": 0.001
+            }
+        },
+        "decoder": {
+            "type": "same",
+            "requires_grad": true,
+            "config": {
+                "out_channels": 512,
+                "channels": 256,
+                "c_mults": [6],
+                "strides": [16],
+                "latent_dim": 256,
+                "transformer_depths": [12],
+                "sinusoidal_blocks": [8],
+                "checkpointing": true,
+                "differential": true,
+                "dyt": true,
+                "dim_heads": 64,
+                "sliding_window": [1,1],
+                "variable_stride": true,
+                "mask_noise": 0.1
+            }
+        },
+        "bottleneck": {
+            "type": "softnorm",
+            "config": {
+                "dim": 256,
+                "noise_augment_dim": 0,
+                "noise_regularize": true,
+                "auto_scale": true,
+                "freeze": false
+            }
+        },
+        "latent_dim": 256,
+        "downsampling_ratio": 4096,
+        "io_channels": 2
+    },
+    "training": {
+        "learning_rate": 1.5e-4,
+        "warmup_steps": 0,
+        "use_ema": true,
+        "optimizer_configs": {
+            "autoencoder": {
+                "optimizer": {
+                    "type": "AdamW",
+                    "config": {
+                        "betas": [0.8, 0.99],
+                        "lr": 1.5e-4,
+                        "weight_decay": 1e-3
+                    }
+                },
+                "scheduler": {
+                    "type": "InverseLR",
+                    "config": {
+                        "inv_gamma": 200000,
+                        "power": 0.5,
+                        "warmup": 0.999
+                    }
+                }
+            },
+            "discriminator": {
+                "optimizer": {
+                    "type": "AdamW",
+                    "config": {
+                        "betas": [0.8, 0.99],
+                        "lr": 3e-4,
+                        "weight_decay": 1e-3
+                    }
+                },
+                "scheduler": {
+                    "type": "InverseLR",
+                    "config": {
+                        "inv_gamma": 200000,
+                        "power": 0.5,
+                        "warmup": 0.999
+                    }
+                }
+            }
+        },
+        "loss_configs": {
+            "discriminator": {
+                "type": "encodec",
+                "config": {
+                    "filters": 64,
+                    "n_ffts": [2048, 1024, 512, 256, 128],
+                    "hop_lengths": [512, 256, 128, 64, 32],
+                    "win_lengths": [2048, 1024, 512, 256, 128]
+                },
+                "weights": {
+                    "adversarial": 0.1,
+                    "feature_matching": 5.0
+                }
+            },
+            "spectral": {
+                "type": "mrstft",
+                "config": {
+                    "fft_sizes": [2048, 1024, 512, 256, 128, 64, 32],
+                    "hop_sizes": [512, 256, 128, 64, 32, 16, 8],
+                    "win_lengths": [2048, 1024, 512, 256, 128, 64, 32],
+                    "perceptual_weighting": true
+                },
+                "weights": {
+                    "mrstft": 1.0
+                }
+            },
+            "time": {
+                "type": "l1",
+                "weights": {
+                    "l1": 0.0
+                }
+            },
+            "bottleneck": {
+                "type": "softnorm",
+                "weights": {
+                    "softnorm": 1e-4
+                }
+            }
+        },
+        "demo": {
+            "demo_every": 2000
+        }
+    }
+}

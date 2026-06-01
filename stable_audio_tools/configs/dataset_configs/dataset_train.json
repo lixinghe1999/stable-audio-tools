@@ -1,0 +1,36 @@
+{
+    "dataset_type": "audio_dir",
+    "datasets": [
+        {
+            "id": "music_hq_musdb",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/musdb18hq/train"
+        },
+        {
+            "id": "music_hq_jingju",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/Jingju/train"
+        },
+        {
+            "id": "music_hq_sr_sq",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/super_resolution_sq"
+        },
+        {
+            "id": "music_hq_sr_hires",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/super_resolution_hires_2_44kHz"
+        },
+        {
+            "id": "music_hq_qqmusic",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/qqmusic_top10w_wav/train"
+        },
+        {
+            "id": "music_uq_jamendo",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/jamendo",
+            "weight": 1.0
+        },
+        {
+            "id": "music_uq_fma",
+            "path": "/cfs-r3ufsqcb/for_share/datasets/aicodec/train/fma_large_wav_s16_mono",
+            "weight": 1.0
+        }
+    ],
+    "random_crop": true
+}

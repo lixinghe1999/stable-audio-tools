@@ -1,0 +1,18 @@
+{
+    "dataset_type": "audio_dir",
+    "datasets": [
+        {
+            "id": "music_hq_musdb",
+            "path": "/data3/aicodec_data/train/musdb18hq/test"
+        },
+        {
+            "id": "music_hq_jingju",
+            "path": "/data3/aicodec_data/train/Jingju/test"
+        },
+        {
+            "id": "music_hq_qqmusic",
+            "path": "/data3/aicodec_data/train/qqmusic_top10w_wav/val"
+        }
+    ],
+    "random_crop": true
+}

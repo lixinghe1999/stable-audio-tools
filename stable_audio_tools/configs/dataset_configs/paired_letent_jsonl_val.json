@@ -1,0 +1,19 @@
+
+{
+    "dataset_type": "paired_latent_jsonl",
+    "training_jsonl": [
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_1/valset_pt.jsonl",
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_2/valset_pt.jsonl",
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_3/valset_pt.jsonl",
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_4/valset_pt.jsonl",
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_5/valset_pt.jsonl",
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_6/valset_pt.jsonl",
+        "/cfs-r3ufsqcb/for_share/datasets/music_restoration_data/jsonl_files/resample_2_jsonl_files_vae_3_7/valset_pt.jsonl"
+    ],
+    "input_key": "location",
+    "target_key": "original_location",
+    "duration_key": "duration",
+    "random_crop": true,
+    "latent_crop_length": 80,
+    "latent_downsampling_ratio": 4096
+}
